@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Legato</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+
+    <link rel="apple-touch-icon" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* モダンで視認性に優れたプロ仕様のゴシック体フォント */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Sometype+Mono:wght@400;500&display=swap');
+
+        :root {
+            /* 楽譜用紙のような温かみのあるアイボリー */
+            --paper-bg: #FDFBF7;
+            /* ピアノやカメラのような高級感のある黒 */
+            --piano-black: #1E1E1E;
+            /* 楽器の金属パーツを模した真鍮ゴールド */
+            --brass-gold: #A37F55;
+            --border-color: rgba(44, 42, 41, 0.08);
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--paper-bg);
+            height: 100dvh;
+            width: 100vw;
+            overflow: hidden;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* 洗練されたプレミアム・ゴシックフォント */
+        .classic-gothic {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        /* 等幅のタイマー用フォント */
+        .timer-mono {
+            font-family: 'Sometype Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* イマーシブモード用UIトランジション */
+        .ui-element {
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .immersive-active #app-header {
+            transform: translateY(-100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .immersive-active #bottom-ui-container {
+            transform: translateY(100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* --- 楽譜エリアの絶対配置とアニメーション --- */
+        #main-content {
+            position: absolute;
+            left: 0;
+            right: 0;
+            /* ヘッダーの高さ分下げる */
+            top: calc(env(safe-area-inset-top, 0px) + 60px);
+            /* 下部パネルの高さ分上げる */
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
+            transition: top 0.6s cubic-bezier(0.16, 1, 0.3, 1), bottom 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 10;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        /* 記録モード時はパネルが大きいのでさらに上へ */
+        body.mode-record #main-content {
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 325px);
+        }
+        
+        /* イマーシブ時は上下の制限を解除し、画面いっぱいに */
+        body.immersive-active #main-content {
+            top: env(safe-area-inset-top, 0px);
+            bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        .page-wrapper {
+            height: 100%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            transition: padding 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        @media (max-width: 640px) {
+            .page-wrapper {
+                padding: 0.75rem;
+            }
+        }
+        
+        body.immersive-active .page-wrapper {
+            padding: 0; 
+        }
+
+        #score-container {
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* ペダルを模したSTAMPボタン */
+        .pedal-btn {
+            position: relative;
+            overflow: hidden;
+            transition: background-color 0.2s, transform 0.1s, border-color 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .pedal-btn:active {
+            transform: scale(0.97);
+            background-color: #111111;
+        }
+        .pedal-btn::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .pedal-btn:active::after {
+            opacity: 1;
+        }
+        
+        /* 楽譜用紙（A4アスペクト比） */
+        .score-paper {
+            aspect-ratio: 210 / 297;
+            max-width: 100%;
+            max-height: 100%;
+            height: 2000px;
+            width: 2000px;
+            box-shadow: 0 10px 30px -8px rgba(44, 42, 41, 0.15), 0 1px 3px -1px rgba(44, 42, 41, 0.08);
+            border-radius: 4px;
+            border: 1px solid rgba(44, 42, 41, 0.06);
+            background: #FFFFFF;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            box-sizing: border-box;
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .score-paper img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* 下部パネル高さ調整 */
+        #bottom-panel {
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .mode-play #bottom-panel {
+            height: 90px;
+            padding-bottom: env(safe-area-inset-bottom, 16px);
+        }
+        .mode-record #bottom-panel {
+            height: 310px;
+            padding-bottom: env(safe-area-inset-bottom, 16px);
+        }
+        
+        .mode-play #record-extended-area {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(12px);
+        }
+        .mode-record #record-extended-area {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="mode-play text-stone-800">
+
+    <!-- アプリ全体コンテナ -->
+    <div class="relative w-full h-full z-0 overflow-hidden">
+        
+        <!-- ヘッダー -->
+        <header id="app-header" class="ui-element absolute top-0 w-full z-40 bg-white/95 border-b border-stone-200/60 pt-[env(safe-area-inset-top,0px)]">
+            <div class="flex items-center justify-between px-6 py-3.5">
+                
+                <!-- 曲選択ボタン -->
+                <div class="flex items-center gap-2.5 cursor-pointer py-1 px-2.5 -ml-2.5 rounded-lg hover:bg-stone-100 transition-colors" id="btn-open-modal">
+                    <i data-lucide="music-2" class="w-5 h-5 text-stone-700 shrink-0"></i>
+                    <h1 id="header-title" class="classic-gothic text-base tracking-tight text-stone-900 truncate max-w-[160px] sm:max-w-[280px]">Legato</h1>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-stone-500 shrink-0"></i>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <!-- モード切替トグル -->
+                    <div class="bg-stone-200/70 p-0.5 rounded-lg flex relative overflow-hidden">
+                        <div id="mode-indicator" class="absolute w-1/2 h-[calc(100%-4px)] top-0.5 left-0.5 bg-white rounded shadow-sm transition-transform duration-300 ease-in-out"></div>
+                        <button id="btn-mode-play" class="relative z-10 px-4 py-1.5 text-xs font-bold rounded w-20 text-stone-900 transition-colors">演奏</button>
+                        <button id="btn-mode-record" class="relative z-10 px-4 py-1.5 text-xs font-bold rounded w-20 text-stone-500 transition-colors">記録</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- メイン楽譜エリア -->
+        <main id="main-content">
+            <!-- 楽譜スライダ -->
+            <div id="score-container" class="absolute top-0 left-0 h-full flex w-full">
+                <!-- JSでページが挿入されます -->
+            </div>
+        </main>
+
+        <!-- 下部UIコンテナ -->
+        <div id="bottom-ui-container" class="ui-element absolute bottom-0 w-full z-30 flex flex-col justify-end pointer-events-none">
+            
+            <!-- ページネーション (ページタブ風) -->
+            <div id="pagination-area" class="w-full px-4 pb-2.5 pointer-events-auto">
+                <div id="pagination-list" class="flex gap-2.5 overflow-x-auto no-scrollbar py-1 px-1 snap-x justify-center">
+                    <!-- JSで動的にボタンが挿入されます -->
+                </div>
+            </div>
+
+            <!-- 下部コントロールパネル -->
+            <div id="bottom-panel" class="w-full bg-white border-t border-stone-200 shadow-lg flex flex-col pointer-events-auto">
+                
+                <!-- 常に表示される基本コントロール -->
+                <div class="flex items-center justify-between px-8 py-4 h-[80px] shrink-0">
+                    <!-- リセット/停止ボタン -->
+                    <button id="btn-reset" class="w-11 h-11 flex items-center justify-center rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors shadow-sm">
+                        <i data-lucide="square" class="w-4 h-4 fill-current"></i>
+                    </button>
+
+                    <!-- タイマー表示 -->
+                    <div class="flex flex-col items-center">
+                        <div id="timer-display" class="timer-mono text-3xl font-bold tracking-wide text-stone-900">
+                            00:00<span class="text-xl text-stone-400">.0</span>
+                        </div>
+                        <div id="mode-label" class="text-[10px] font-extrabold tracking-widest text-stone-400 mt-0.5">
+                            演奏モード
+                        </div>
+                    </div>
+
+                    <!-- 再生/一時停止ボタン -->
+                    <button id="btn-play" class="w-12 h-12 flex items-center justify-center rounded-lg bg-stone-900 text-white shadow-sm hover:bg-stone-800 transition-all">
+                        <i data-lucide="play" id="icon-play" class="w-5 h-5 ml-0.5 fill-current text-[#F5E6D3]"></i>
+                        <i data-lucide="pause" id="icon-pause" class="w-5 h-5 hidden fill-current text-[#F5E6D3]"></i>
+                    </button>
+                </div>
+
+                <!-- 記録モード時のみ表示される拡張エリア -->
+                <div id="record-extended-area" class="flex-1 px-8 pb-5 flex gap-5 overflow-hidden transition-all duration-500">
+                    
+                    <!-- スタンプリスト (左側) -->
+                    <div class="flex-1 bg-stone-50 border border-stone-200 rounded-xl p-3.5 overflow-y-auto no-scrollbar flex flex-col">
+                        <h3 class="text-[10px] font-extrabold text-stone-400 tracking-widest mb-2 px-1">タイムライン</h3>
+                        <ul id="timestamp-list" class="flex flex-col gap-1.5">
+                            <!-- JSでリスト生成 -->
+                        </ul>
+                    </div>
+
+                    <!-- ペダルを模した重厚なSTAMPボタン (右側) -->
+                    <button id="btn-stamp" class="pedal-btn w-40 h-full max-h-[150px] bg-stone-900 text-white rounded-xl shadow-md flex flex-col items-center justify-center disabled:opacity-30 disabled:pointer-events-none">
+                        <i data-lucide="chevron-up" class="w-8 h-8 opacity-40 mb-1"></i>
+                        <span class="classic-gothic text-base tracking-widest font-bold">記録</span>
+                        <span class="text-[10px] text-stone-400 font-bold tracking-wide mt-1">タップして次へ進む</span>
+                    </button>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 曲管理モーダル -->
+    <div id="score-modal" class="absolute inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/30 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-xl border border-stone-200 overflow-hidden flex flex-col max-h-[80vh]">
+            <!-- モーダルヘッダー -->
+            <div class="p-5 border-b border-stone-200 flex justify-between items-center bg-stone-50">
+                <h2 class="classic-gothic text-sm font-bold text-stone-800 flex items-center gap-2">
+                    <i data-lucide="library" class="w-4 h-4 text-stone-600"></i>
+                    Legato Library
+                </h2>
+                <button id="btn-close-modal" class="p-1.5 hover:bg-stone-200 rounded-md text-stone-500 active:scale-95 transition-transform">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            
+            <!-- 曲リストエリア -->
+            <div class="p-4 overflow-y-auto flex-1 no-scrollbar bg-white" id="modal-score-list">
+                <!-- JSでリスト生成 -->
+            </div>
+            
+            <!-- モーダルフッター -->
+            <div class="p-4 bg-stone-50 border-t border-stone-200 flex flex-col gap-2.5">
+                <label class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-stone-900 text-white rounded-lg font-bold cursor-pointer shadow-sm hover:bg-stone-800 active:scale-95 transition-transform text-xs">
+                    <i data-lucide="plus-square" class="w-4 h-4 text-[#F5E6D3]"></i>
+                    新しい楽譜画像を読み込む
+                    <input type="file" id="modal-file-input" accept="image/*" multiple class="hidden">
+                </label>
+                
+                <div class="flex gap-2">
+                    <button id="btn-export-json" class="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-stone-200 text-stone-700 rounded-lg font-bold active:scale-95 transition-transform text-[10px] hover:bg-stone-50">
+                        <i data-lucide="download" class="w-3.5 h-3.5 text-stone-500"></i> JSON保存
+                    </button>
+                    <label class="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-stone-200 text-stone-700 rounded-lg font-bold cursor-pointer active:scale-95 transition-transform text-[10px] hover:bg-stone-50">
+                        <i data-lucide="upload" class="w-3.5 h-3.5 text-stone-500"></i> JSON読込
+                        <input type="file" id="import-json-input" accept=".json" class="hidden">
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI調和用カスタム・トースト通知 -->
+    <div id="custom-toast" class="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-stone-900 text-stone-100 text-xs py-2.5 px-4 rounded-lg shadow-md opacity-0 pointer-events-none transition-all duration-300">
+        通知メッセージ
+    </div>
+
+    <!-- UI調和用カスタム確認ダイアログ -->
+    <div id="custom-confirm-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/30 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-stone-200 p-5 flex flex-col gap-4">
+            <h3 class="text-xs font-bold text-stone-800 tracking-wider" id="confirm-title">確認</h3>
+            <p class="text-xs text-stone-500 leading-relaxed" id="confirm-msg">メッセージ</p>
+            <div class="flex gap-2 justify-end mt-2">
+                <button id="btn-confirm-cancel" class="py-2 px-4 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-[10px] font-bold tracking-wider">キャンセル</button>
+                <button id="btn-confirm-ok" class="py-2 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-[10px] font-bold tracking-wider">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI調和用カスタムプロンプトダイアログ -->
+    <div id="custom-prompt-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/30 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-stone-200 p-5 flex flex-col gap-4">
+            <h3 class="text-xs font-bold text-stone-800 tracking-wider" id="prompt-title">曲名変更</h3>
+            <input type="text" id="prompt-input" class="w-full px-3 py-2 border border-stone-200 rounded-lg text-xs font-medium focus:outline-none focus:border-stone-400">
+            <div class="flex gap-2 justify-end mt-2">
+                <button id="btn-prompt-cancel" class="py-2 px-4 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-[10px] font-bold tracking-wider">キャンセル</button>
+                <button id="btn-prompt-save" class="py-2 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-[10px] font-bold tracking-wider">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- アプリケーションロジック -->
+    <script>
+        // --- 1. 初期化とアイコン描画 ---
+        lucide.createIcons();
+
+        // --- 2. 状態管理 (State) ---
+        const state = {
+            mode: 'play', // 'play' | 'record'
+            isPlaying: false,
+            currentTime: 0,
+            lastFrameTime: 0,
+            animationFrameId: null,
+            currentPage: 0,
+            currentActiveEventIndex: 0, // タイムライン描画の最適化用
+            
+            // 複数曲対応用プロパティ
+            scores: [], // [{ id, title, pages, timeline: [{time, page}] }, ...]
+            currentScoreId: null, 
+            
+            immersiveTimeout: null,
+            isImmersive: false
+        };
+
+        function getCurrentScore() {
+            return state.scores.find(s => s.id === state.currentScoreId);
+        }
+
+        // --- 3. DOM要素の取得 ---
+        const dom = {
+            body: document.body,
+            headerTitle: document.getElementById('header-title'),
+            scoreContainer: document.getElementById('score-container'),
+            paginationList: document.getElementById('pagination-list'),
+            timerDisplay: document.getElementById('timer-display'),
+            modeLabel: document.getElementById('mode-label'),
+            btnPlay: document.getElementById('btn-play'),
+            iconPlay: document.getElementById('icon-play'),
+            iconPause: document.getElementById('icon-pause'),
+            btnReset: document.getElementById('btn-reset'),
+            btnModePlay: document.getElementById('btn-mode-play'),
+            btnModeRecord: document.getElementById('btn-mode-record'),
+            modeIndicator: document.getElementById('mode-indicator'),
+            btnStamp: document.getElementById('btn-stamp'),
+            timestampList: document.getElementById('timestamp-list'),
+            
+            btnOpenModal: document.getElementById('btn-open-modal'),
+            scoreModal: document.getElementById('score-modal'),
+            btnCloseModal: document.getElementById('btn-close-modal'),
+            modalScoreList: document.getElementById('modal-score-list'),
+            modalFileInput: document.getElementById('modal-file-input'),
+            btnExportJson: document.getElementById('btn-export-json'),
+            importJsonInput: document.getElementById('import-json-input'),
+
+            toast: document.getElementById('custom-toast'),
+            confirmModal: document.getElementById('custom-confirm-modal'),
+            confirmTitle: document.getElementById('confirm-title'),
+            confirmMsg: document.getElementById('confirm-msg'),
+            btnConfirmCancel: document.getElementById('btn-confirm-cancel'),
+            btnConfirmOk: document.getElementById('btn-confirm-ok'),
+
+            promptModal: document.getElementById('custom-prompt-modal'),
+            promptTitle: document.getElementById('prompt-title'),
+            promptInput: document.getElementById('prompt-input'),
+            btnPromptCancel: document.getElementById('btn-prompt-cancel'),
+            btnPromptSave: document.getElementById('btn-prompt-save')
+        };
+
+        // --- 3.5 自作安全ポップアップ/通知ヘルパー ---
+        let toastTimeout = null;
+        function showToast(message) {
+            clearTimeout(toastTimeout);
+            dom.toast.textContent = message;
+            dom.toast.classList.remove('opacity-0', 'pointer-events-none');
+            dom.toast.classList.add('opacity-100');
+            toastTimeout = setTimeout(() => {
+                dom.toast.classList.remove('opacity-100');
+                dom.toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 2500);
+        }
+
+        let confirmCallback = null;
+        function showConfirm(title, message, onOk) {
+            dom.confirmTitle.textContent = title;
+            dom.confirmMsg.textContent = message;
+            confirmCallback = onOk;
+            dom.confirmModal.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        dom.btnConfirmCancel.onclick = () => {
+            dom.confirmModal.classList.add('opacity-0', 'pointer-events-none');
+            confirmCallback = null;
+        };
+
+        dom.btnConfirmOk.onclick = () => {
+            if (confirmCallback) confirmCallback();
+            dom.confirmModal.classList.add('opacity-0', 'pointer-events-none');
+            confirmCallback = null;
+        };
+
+        let promptCallback = null;
+        function showPrompt(title, defaultValue, onSave) {
+            dom.promptTitle.textContent = title;
+            dom.promptInput.value = defaultValue;
+            promptCallback = onSave;
+            dom.promptModal.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => dom.promptInput.focus(), 150);
+        }
+
+        dom.btnPromptCancel.onclick = () => {
+            dom.promptModal.classList.add('opacity-0', 'pointer-events-none');
+            promptCallback = null;
+        };
+
+        dom.btnPromptSave.onclick = () => {
+            const val = dom.promptInput.value.trim();
+            if (val && promptCallback) {
+                promptCallback(val);
+            }
+            dom.promptModal.classList.add('opacity-0', 'pointer-events-none');
+            promptCallback = null;
+        };
+
+        // --- 4. ダミー楽譜データの生成 ---
+        function createDummySVG(pageNum) {
+            const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1120" style="background-color:#fff; width: 100%; height: 100%;">
+                <rect width="100%" height="100%" fill="#ffffff"/>
+                <text x="400" y="80" font-family="'Inter', 'Noto Sans JP', sans-serif" font-size="28" font-weight="700" text-anchor="middle" fill="#2c2a29">デモ楽譜 - ${pageNum + 1}ページ</text>
+                
+                <g stroke="#2c2a29" stroke-width="1.3" opacity="0.85">
+                    <g transform="translate(50, 150)">
+                        <line x1="0" y1="0" x2="700" y2="0"/><line x1="0" y1="15" x2="700" y2="15"/><line x1="0" y1="30" x2="700" y2="30"/><line x1="0" y1="45" x2="700" y2="45"/><line x1="0" y1="60" x2="700" y2="60"/>
+                        <circle cx="150" cy="30" r="7" fill="#2c2a29"/><path d="M157 30 V-10" fill="none"/>
+                        <circle cx="250" cy="45" r="7" fill="#2c2a29"/><path d="M257 45 V5" fill="none"/>
+                        <circle cx="350" cy="15" r="7" fill="#2c2a29"/><path d="M357 15 V-25" fill="none"/>
+                        <rect x="0" y="0" width="3" height="60" fill="#2c2a29"/>
+                        <rect x="697" y="0" width="3" height="60" fill="#2c2a29"/>
+                    </g>
+                    <g transform="translate(50, 350)">
+                        <line x1="0" y1="0" x2="700" y2="0"/><line x1="0" y1="15" x2="700" y2="15"/><line x1="0" y1="30" x2="700" y2="30"/><line x1="0" y1="45" x2="700" y2="45"/><line x1="0" y1="60" x2="700" y2="60"/>
+                        <circle cx="200" cy="60" r="7" fill="#2c2a29"/><path d="M207 60 V20" fill="none"/>
+                        <circle cx="400" cy="30" r="7" fill="#2c2a29"/><path d="M407 30 V-10" fill="none"/>
+                        <rect x="0" y="0" width="3" height="60" fill="#2c2a29"/>
+                        <rect x="697" y="0" width="3" height="60" fill="#2c2a29"/>
+                    </g>
+                    <g transform="translate(50, 550)">
+                        <line x1="0" y1="0" x2="700" y2="0"/><line x1="0" y1="15" x2="700" y2="15"/><line x1="0" y1="30" x2="700" y2="30"/><line x1="0" y1="45" x2="700" y2="45"/><line x1="0" y1="60" x2="700" y2="60"/>
+                        <rect x="0" y="0" width="3" height="60" fill="#2c2a29"/>
+                        <rect x="697" y="0" width="3" height="60" fill="#2c2a29"/>
+                    </g>
+                    <g transform="translate(50, 750)">
+                        <line x1="0" y1="0" x2="700" y2="0"/><line x1="0" y1="15" x2="700" y2="15"/><line x1="0" y1="30" x2="700" y2="30"/><line x1="0" y1="45" x2="700" y2="45"/><line x1="0" y1="60" x2="700" y2="60"/>
+                        <rect x="0" y="0" width="3" height="60" fill="#2c2a29"/>
+                        <rect x="697" y="0" width="3" height="60" fill="#2c2a29"/>
+                    </g>
+                </g>
+                <text x="750" y="1080" font-family="'Inter', sans-serif" font-size="14" text-anchor="end" fill="#7a7572">${pageNum + 1} ページ</text>
+            </svg>`;
+            return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        }
+
+        // --- 5. データの初期化と保存 (LocalStorage) ---
+        const STORAGE_KEY = 'autoScoreTurnerDataV3'; // タイムライン構造用にキーをV3へ
+        const OLD_STORAGE_KEY_V2 = 'autoScoreTurnerDataV2';
+        const OLD_STORAGE_KEY = 'autoScoreTurnerData'; 
+
+        // タイムライン形式へのデータマイグレーション
+        function migrateToTimeline(score) {
+            if (score.timestamps && !score.timeline) {
+                score.timeline = [];
+                score.timestamps.forEach((t, i) => {
+                    if (t !== null) score.timeline.push({ time: t, page: i });
+                });
+                score.timeline.sort((a,b) => a.time - b.time);
+                delete score.timestamps;
+            }
+            if (!score.timeline || score.timeline.length === 0) {
+                score.timeline = [{ time: 0, page: 0 }];
+            }
+            return score;
+        }
+
+        function loadData() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    state.scores = parsed.scores || [];
+                    state.scores.forEach(migrateToTimeline);
+                    state.currentScoreId = parsed.currentScoreId || (state.scores[0]?.id);
+                    state.mode = parsed.mode || 'play';
+                } else {
+                    // 旧バージョン(V2, V1)からのマイグレーション
+                    const oldSaved = localStorage.getItem(OLD_STORAGE_KEY_V2) || localStorage.getItem(OLD_STORAGE_KEY);
+                    if (oldSaved) {
+                        const parsedOld = JSON.parse(oldSaved);
+                        
+                        // V2形式の複数楽譜データか？
+                        if (parsedOld.scores && Array.isArray(parsedOld.scores)) {
+                            state.scores = parsedOld.scores;
+                            state.scores.forEach(migrateToTimeline);
+                            state.currentScoreId = parsedOld.currentScoreId || state.scores[0].id;
+                            state.mode = parsedOld.mode || 'play';
+                            saveData();
+                        } else if (parsedOld.pages && parsedOld.timestamps) {
+                            // V1形式の単一楽譜データ
+                            const migratedScore = {
+                                id: 'score_' + Date.now(),
+                                title: '移行した楽譜',
+                                pages: parsedOld.pages,
+                                timestamps: parsedOld.timestamps
+                            };
+                            migrateToTimeline(migratedScore);
+                            state.scores = [migratedScore];
+                            state.currentScoreId = migratedScore.id;
+                            state.mode = parsedOld.mode || 'play';
+                            saveData(); 
+                        } else {
+                            setupDefaultData();
+                        }
+                    } else {
+                        setupDefaultData();
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load data", e);
+                setupDefaultData();
+            }
+            
+            if (state.scores.length === 0) setupDefaultData();
+            if (!getCurrentScore()) state.currentScoreId = state.scores[0].id;
+
+            loadCurrentScoreToUI();
+        }
+
+        function setupDefaultData() {
+            const defaultScore = {
+                id: 'score_' + Date.now(),
+                title: 'クラシック曲',
+                pages: [createDummySVG(0), createDummySVG(1), createDummySVG(2)],
+                timeline: [{ time: 0, page: 0 }]
+            };
+            state.scores = [defaultScore];
+            state.currentScoreId = defaultScore.id;
+            state.mode = 'play';
+        }
+
+        function saveData() {
+            try {
+                const dataToSave = {
+                    scores: state.scores,
+                    currentScoreId: state.currentScoreId,
+                    mode: state.mode
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+            } catch (e) {
+                console.warn("Storage quota exceeded or error.", e);
+                if (e.name === 'QuotaExceededError') {
+                    showToast("容量制限のため、新規画像は保存できません。不要な曲を削除してください。");
+                }
+            }
+        }
+
+        function loadCurrentScoreToUI() {
+            const score = getCurrentScore();
+            if (!score) return;
+
+            if (state.isPlaying) togglePlay(); 
+            state.currentTime = 0;
+            state.currentPage = score.timeline.length > 0 ? score.timeline[0].page : 0;
+            state.currentActiveEventIndex = 0;
+            
+            dom.headerTitle.textContent = score.title;
+            
+            applyModeUI();
+            renderScorePages();
+            renderPagination();
+            renderTimestampList();
+            updateScorePosition();
+            updateTimerDisplay();
+        }
+
+        // --- 6. UIレンダリング ---
+        
+        function renderScorePages() {
+            const score = getCurrentScore();
+            if (!score) return;
+
+            dom.scoreContainer.innerHTML = '';
+            dom.scoreContainer.style.width = `${score.pages.length * 100}%`;
+
+            score.pages.forEach((src) => {
+                const pageWrapper = document.createElement('div');
+                pageWrapper.style.width = `${100 / score.pages.length}%`;
+                pageWrapper.className = 'page-wrapper';
+                
+                const paper = document.createElement('div');
+                paper.className = 'score-paper';
+                
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = 'w-full h-full object-contain';
+                img.draggable = false;
+                
+                paper.appendChild(img);
+                pageWrapper.appendChild(paper);
+                dom.scoreContainer.appendChild(pageWrapper);
+            });
+        }
+
+        function renderPagination() {
+            const score = getCurrentScore();
+            if (!score) return;
+
+            dom.paginationList.innerHTML = '';
+            score.pages.forEach((_, index) => {
+                const btn = document.createElement('button');
+                btn.className = `px-4 h-9 rounded-md flex items-center justify-center text-xs font-bold tracking-wider transition-all shrink-0 snap-center border ${
+                    index === state.currentPage 
+                        ? 'bg-stone-900 text-white border-stone-950 scale-105 shadow-sm' 
+                        : 'bg-white text-stone-600 border-stone-200/80 hover:bg-stone-50'
+                }`;
+                btn.textContent = `P. ${index + 1}`;
+                
+                // タブをタップしたときの処理（記録対応）
+                btn.onclick = () => handlePageChange(index);
+                dom.paginationList.appendChild(btn);
+            });
+        }
+
+        function renderTimestampList() {
+            const score = getCurrentScore();
+            if (!score || !score.timeline) return;
+
+            dom.timestampList.innerHTML = '';
+            
+            // 現在アクティブなイベントを探す
+            let activeIndex = 0;
+            for (let i = 0; i < score.timeline.length; i++) {
+                if (state.currentTime >= score.timeline[i].time) {
+                    activeIndex = i;
+                } else {
+                    break;
+                }
+            }
+            state.currentActiveEventIndex = activeIndex;
+
+            score.timeline.forEach((event, index) => {
+                const isActive = index === activeIndex;
+                const li = document.createElement('li');
+                li.className = `flex items-center justify-between p-2.5 rounded-lg text-xs transition-colors border cursor-pointer ${
+                    isActive ? 'bg-stone-100/80 border-stone-300 shadow-sm' : 'bg-transparent border-transparent hover:bg-stone-50'
+                }`;
+                
+                // イベントタップでその時間にシーク
+                li.onclick = () => {
+                    if (state.isPlaying) togglePlay();
+                    state.currentTime = event.time;
+                    updateTimerDisplay();
+                    checkAutoTurn(); // 状態を即時反映
+                };
+                
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'flex items-center gap-3 w-full';
+                
+                const pageInfo = document.createElement('span');
+                pageInfo.className = `font-bold w-16 ${isActive ? 'text-stone-900' : 'text-stone-500'}`;
+                pageInfo.textContent = `${event.page + 1} ページ`;
+                
+                const timeInfo = document.createElement('span');
+                timeInfo.className = `timer-mono font-medium flex-1 ${isActive ? 'text-stone-900' : 'text-stone-600'}`;
+                timeInfo.textContent = formatTime(event.time);
+                
+                infoDiv.appendChild(pageInfo);
+                infoDiv.appendChild(timeInfo);
+                li.appendChild(infoDiv);
+
+                // 削除ボタン (最初のイベント以外)
+                if (index > 0) {
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'p-1.5 text-stone-400 hover:text-red-500 hover:bg-stone-200 rounded transition-all';
+                    delBtn.innerHTML = '<i data-lucide="x" class="w-3.5 h-3.5"></i>';
+                    delBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        score.timeline.splice(index, 1);
+                        saveData();
+                        checkAutoTurn(); // 再計算
+                    };
+                    li.appendChild(delBtn);
+                } else {
+                    const dummy = document.createElement('div');
+                    dummy.className = 'w-6 h-6';
+                    li.appendChild(dummy);
+                }
+
+                dom.timestampList.appendChild(li);
+            });
+            
+            lucide.createIcons();
+            
+            if (state.mode === 'record') {
+                // ペダルは常に押せるようにする（ただし最後のページなら進めない旨はアクション内で判定）
+                dom.btnStamp.disabled = !state.isPlaying;
+            }
+        }
+
+        function updateScorePosition() {
+            const score = getCurrentScore();
+            if (!score) return;
+            const percentage = - (state.currentPage * (100 / score.pages.length));
+            dom.scoreContainer.style.transform = `translateX(${percentage}%)`;
+        }
+
+        function formatTime(ms) {
+            const totalSec = Math.floor(ms / 1000);
+            const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+            const s = (totalSec % 60).toString().padStart(2, '0');
+            const dec = Math.floor((ms % 1000) / 100).toString();
+            return `${m}:${s}.${dec}`;
+        }
+
+        function updateTimerDisplay() {
+            const totalSec = Math.floor(state.currentTime / 1000);
+            const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+            const s = (totalSec % 60).toString().padStart(2, '0');
+            const dec = Math.floor((state.currentTime % 1000) / 100).toString();
+            dom.timerDisplay.innerHTML = `${m}:${s}<span class="text-xl text-stone-400">.${dec}</span>`;
+        }
+
+        // --- モーダル (曲管理) UI描画 ---
+        function renderScoreModalList() {
+            dom.modalScoreList.innerHTML = '';
+            state.scores.forEach(score => {
+                const isCurrent = score.id === state.currentScoreId;
+                const item = document.createElement('div');
+                item.className = `flex items-center justify-between p-3.5 mb-2.5 rounded-xl border transition-all ${
+                    isCurrent ? 'border-stone-400 bg-stone-50/70' : 'border-stone-200 bg-white hover:border-stone-300'
+                }`;
+                
+                // 左側
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'flex-1 overflow-hidden cursor-pointer pl-1';
+                infoDiv.onclick = () => selectScore(score.id);
+                
+                infoDiv.innerHTML = `
+                    <div class="classic-gothic font-bold text-sm text-stone-800 truncate ${isCurrent ? 'text-stone-900' : ''}">${score.title}</div>
+                    <div class="text-[10px] text-stone-500 font-bold tracking-wide mt-0.5">${score.pages.length} ページ</div>
+                `;
+
+                // 右側
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'flex items-center gap-1 ml-3';
+
+                // タイトル編集ボタン
+                const editBtn = document.createElement('button');
+                editBtn.className = 'p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-100 rounded transition-all';
+                editBtn.innerHTML = '<i data-lucide="edit" class="w-4 h-4"></i>';
+                editBtn.onclick = (e) => {
+                    e.stopPropagation(); 
+                    showPrompt('楽譜の名前を変更:', score.title, (newTitle) => {
+                        score.title = newTitle;
+                        saveData();
+                        renderScoreModalList();
+                        if (isCurrent) dom.headerTitle.textContent = score.title;
+                        showToast("曲名を変更しました。");
+                    });
+                };
+
+                // 削除ボタン
+                const delBtn = document.createElement('button');
+                delBtn.className = 'p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-100 rounded transition-all';
+                delBtn.innerHTML = '<i data-lucide="trash" class="w-4 h-4"></i>';
+                delBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (state.scores.length <= 1) {
+                        showToast("最後の楽譜は削除できません。");
+                        return;
+                    }
+                    showConfirm("楽譜の削除", `「${score.title}」をライブラリから完全に削除しますか？`, () => {
+                        deleteScore(score.id);
+                        showToast("楽譜を削除しました。");
+                    });
+                };
+
+                actionsDiv.appendChild(editBtn);
+                actionsDiv.appendChild(delBtn);
+                
+                item.appendChild(infoDiv);
+                item.appendChild(actionsDiv);
+                dom.modalScoreList.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        // --- 7. コントロールロジック (タイムライン対応) ---
+
+        // ページを切り替える汎用関数（必要に応じてタイムラインに記録）
+        function handlePageChange(targetPageIndex) {
+            const score = getCurrentScore();
+            if (!score) return;
+            targetPageIndex = Math.min(Math.max(targetPageIndex, 0), score.pages.length - 1);
+            
+            // 記録モードで再生中の場合のみ、タイムラインに記録する
+            if (state.mode === 'record' && state.isPlaying) {
+                // 現在時刻より後にあるイベントをすべて削除（上書き）
+                score.timeline = score.timeline.filter(e => e.time <= state.currentTime);
+                // ジャンプイベントを追加
+                score.timeline.push({ time: Math.floor(state.currentTime), page: targetPageIndex });
+                saveData();
+                showToast(`${targetPageIndex + 1}ページへの移動を記録しました`);
+            }
+
+            state.currentPage = targetPageIndex;
+            updateScorePosition();
+            renderPagination();
+            renderTimestampList();
+        }
+
+        function togglePlay() {
+            state.isPlaying = !state.isPlaying;
+            
+            if (state.isPlaying) {
+                dom.iconPlay.classList.add('hidden');
+                dom.iconPause.classList.remove('hidden');
+                dom.btnPlay.classList.replace('bg-stone-900', 'bg-stone-700');
+                
+                state.lastFrameTime = performance.now();
+                state.animationFrameId = requestAnimationFrame(loop);
+                
+                if (state.mode === 'record') renderTimestampList();
+                resetImmersiveTimer();
+
+            } else {
+                dom.iconPlay.classList.remove('hidden');
+                dom.iconPause.classList.add('hidden');
+                dom.btnPlay.classList.replace('bg-stone-700', 'bg-stone-900');
+                
+                cancelAnimationFrame(state.animationFrameId);
+                if (state.mode === 'record') dom.btnStamp.disabled = true;
+                exitImmersiveMode();
+            }
+        }
+
+        function resetAll() {
+            if (state.isPlaying) togglePlay();
+            state.currentTime = 0;
+            const score = getCurrentScore();
+            state.currentPage = score && score.timeline.length > 0 ? score.timeline[0].page : 0;
+            updateTimerDisplay();
+            updateScorePosition();
+            renderPagination();
+            renderTimestampList();
+            exitImmersiveMode();
+        }
+
+        function loop(timestamp) {
+            if (!state.isPlaying) return;
+
+            const delta = timestamp - state.lastFrameTime;
+            state.currentTime += delta;
+            state.lastFrameTime = timestamp;
+
+            updateTimerDisplay();
+
+            if (state.mode === 'play') checkAutoTurn();
+
+            state.animationFrameId = requestAnimationFrame(loop);
+        }
+
+        // 自動譜めくりロジック（タイムライン参照）
+        function checkAutoTurn() {
+            const score = getCurrentScore();
+            if (!score || !score.timeline) return;
+
+            let activeIndex = -1;
+            let targetPage = 0;
+            
+            // 現在時刻で有効な最後のイベントを探す
+            for (let i = 0; i < score.timeline.length; i++) {
+                if (state.currentTime >= score.timeline[i].time) {
+                    activeIndex = i;
+                    targetPage = score.timeline[i].page;
+                } else {
+                    break;
+                }
+            }
+
+            let needsRender = false;
+
+            // アクティブなイベントが変わったらリストを再描画
+            if (state.currentActiveEventIndex !== activeIndex) {
+                state.currentActiveEventIndex = activeIndex;
+                needsRender = true;
+            }
+
+            // ページが変わったら表示を更新
+            if (state.currentPage !== targetPage) {
+                state.currentPage = targetPage;
+                updateScorePosition();
+                needsRender = true;
+            }
+
+            if (needsRender) {
+                renderPagination();
+                renderTimestampList();
+            }
+        }
+
+        // ペダルを踏んだときの処理
+        function recordStamp(e) {
+            const score = getCurrentScore();
+            if (!state.isPlaying || state.mode !== 'record') return;
+            
+            if (state.currentPage >= score.pages.length - 1) {
+                showToast("最後のページです");
+                return;
+            }
+
+            // 単純に次のページへの移動を記録
+            handlePageChange(state.currentPage + 1);
+        }
+
+        // --- 8. UI/UX エフェクト関数 ---
+
+        function setMode(newMode) {
+            if (state.isPlaying) togglePlay(); 
+            state.mode = newMode;
+            applyModeUI();
+            saveData();
+        }
+
+        function applyModeUI() {
+            dom.body.classList.remove('mode-play', 'mode-record');
+            dom.body.classList.add(`mode-${state.mode}`);
+
+            if (state.mode === 'play') {
+                dom.modeIndicator.style.transform = 'translateX(0)';
+                dom.btnModePlay.classList.replace('text-stone-500', 'text-stone-900');
+                dom.btnModeRecord.classList.replace('text-stone-900', 'text-stone-500');
+                dom.modeLabel.textContent = '演奏モード';
+                dom.modeLabel.className = 'text-[10px] font-extrabold tracking-widest text-stone-400 mt-0.5';
+            } else {
+                dom.modeIndicator.style.transform = 'translateX(100%)';
+                dom.btnModePlay.classList.replace('text-stone-900', 'text-stone-500');
+                dom.btnModeRecord.classList.replace('text-stone-500', 'text-stone-900');
+                dom.modeLabel.textContent = '記録モード';
+                dom.modeLabel.className = 'text-[10px] font-extrabold tracking-widest text-[#A37F55] mt-0.5';
+            }
+            renderTimestampList();
+        }
+
+        function resetImmersiveTimer() {
+            if (state.isImmersive) {
+                dom.body.classList.remove('immersive-active');
+                state.isImmersive = false;
+            }
+            clearTimeout(state.immersiveTimeout);
+            
+            if (state.mode === 'play' && state.isPlaying) {
+                state.immersiveTimeout = setTimeout(() => {
+                    dom.body.classList.add('immersive-active');
+                    state.isImmersive = true;
+                }, 3000);
+            }
+        }
+
+        function exitImmersiveMode() {
+            clearTimeout(state.immersiveTimeout);
+            dom.body.classList.remove('immersive-active');
+            state.isImmersive = false;
+        }
+
+        // --- 9. モーダル・ファイル・JSONロジック ---
+
+        function openModal() {
+            renderScoreModalList();
+            dom.scoreModal.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function closeModal() {
+            dom.scoreModal.classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        function selectScore(id) {
+            state.currentScoreId = id;
+            saveData();
+            closeModal();
+            loadCurrentScoreToUI();
+        }
+
+        function deleteScore(id) {
+            state.scores = state.scores.filter(s => s.id !== id);
+            if (state.currentScoreId === id) {
+                state.currentScoreId = state.scores[0].id;
+                loadCurrentScoreToUI();
+            }
+            saveData();
+            renderScoreModalList();
+        }
+
+        dom.modalFileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            const readers = files.map(file => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => resolve(event.target.result);
+                    reader.readAsDataURL(file);
+                });
+            });
+
+            Promise.all(readers).then(images => {
+                const newScore = {
+                    id: 'score_' + Date.now(),
+                    title: '新しい楽譜 ' + (state.scores.length + 1),
+                    pages: images,
+                    timeline: [{ time: 0, page: 0 }]
+                };
+                
+                state.scores.push(newScore);
+                state.currentScoreId = newScore.id;
+                
+                saveData();
+                closeModal();
+                loadCurrentScoreToUI();
+                showToast("新しい楽譜を読み込みました。");
+            });
+            e.target.value = ''; 
+        });
+
+        dom.btnExportJson.addEventListener('click', () => {
+            const score = getCurrentScore();
+            if (!score) return;
+            
+            const dataStr = JSON.stringify(score, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${score.title.replace(/\s+/g, '_')}_Legato.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("JSONデータを出力しました。");
+        });
+
+        dom.importJsonInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    
+                    if (imported.pages && (imported.timeline || imported.timestamps) && Array.isArray(imported.pages)) {
+                        imported.id = 'score_' + Date.now();
+                        if(!imported.title) imported.title = 'インポートした楽譜';
+                        
+                        migrateToTimeline(imported);
+                        state.scores.push(imported);
+                        state.currentScoreId = imported.id;
+                        
+                        saveData();
+                        closeModal();
+                        loadCurrentScoreToUI();
+                        showToast("JSONデータを読み込みました。");
+                    } else {
+                        showToast("対応していないファイル形式です。");
+                    }
+                } catch(err) {
+                    showToast("JSONファイルの読込に失敗しました。");
+                    console.error(err);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = ''; 
+        });
+
+        // --- 10. イベントリスナー登録 ---
+        dom.btnPlay.addEventListener('click', togglePlay);
+        dom.btnReset.addEventListener('click', resetAll);
+        dom.btnModePlay.addEventListener('click', () => setMode('play'));
+        dom.btnModeRecord.addEventListener('click', () => setMode('record'));
+        
+        dom.btnOpenModal.addEventListener('click', openModal);
+        dom.btnCloseModal.addEventListener('click', closeModal);
+        dom.scoreModal.addEventListener('click', (e) => {
+            if (e.target === dom.scoreModal) closeModal();
+        });
+
+        dom.btnStamp.addEventListener('touchstart', (e) => {
+            e.preventDefault(); 
+            recordStamp(e);
+        }, { passive: false });
+        dom.btnStamp.addEventListener('mousedown', (e) => {
+            recordStamp(e);
+        });
+
+        // 左右半分タップでの手動ページめくり（これも記録対応）
+        dom.scoreContainer.addEventListener('click', (e) => {
+            if (state.isImmersive) {
+                resetImmersiveTimer();
+                return;
+            }
+            const width = window.innerWidth;
+            const clickX = e.clientX;
+            const score = getCurrentScore();
+            if (!score) return;
+            
+            if (clickX > width / 2) {
+                if (state.currentPage < score.pages.length - 1) {
+                    handlePageChange(state.currentPage + 1);
+                }
+            } else {
+                if (state.currentPage > 0) {
+                    handlePageChange(state.currentPage - 1);
+                }
+            }
+        });
+
+        const uiEvents = ['touchstart', 'touchmove', 'mousedown', 'mousemove', 'click'];
+        uiEvents.forEach(evt => {
+            document.addEventListener(evt, resetImmersiveTimer, { passive: true });
+        });
+
+        // --- 11. アプリ起動 ---
+        loadData();
+
+    </script>
+</body>
+</html>
