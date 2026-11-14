@@ -4,12 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Legato</title>
-    <!-- プレミアムなアイコンとPWA対応設定 -->
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
     <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgo=">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -616,6 +615,22 @@
         // --- IndexedDB システム ---
         const DB_NAME = 'LegatoScoresDB';
         const STORE_NAME = 'scoresStore';
+
+        async function requestStoragePersist() {
+            if (navigator.storage && navigator.storage.persist) {
+                try {
+                    const isPersisted = await navigator.storage.persisted();
+                    if (!isPersisted) {
+                        const granted = await navigator.storage.persist();
+                        console.log('Storage persisted:', granted);
+                    } else {
+                        console.log('Storage is already persisted.');
+                    }
+                } catch (error) {
+                    console.error('Storage persist request failed:', error);
+                }
+            }
+        }
 
         function initDB() {
             return new Promise((resolve, reject) => {
